@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EarnTask Admin</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{--bg:#f0f2f8;--card:#fff;--tx:#1b2238;--mu:#6b7390;--ac:#4f8ef7;--bd:#e1e5f0;--ok:#1fa971;--no:#d64545}
+@media (prefers-color-scheme:dark){:root{--bg:#10131d;--card:#1a1f2e;--tx:#eef1fa;--mu:#98a0bc;--bd:#2a3146}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,sans-serif;padding:14px;max-width:640px;margin:auto}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:12px}
+h2{font-size:17px;margin:18px 0 8px}input{width:100%;padding:12px;border:1px solid var(--bd);border-radius:12px;background:var(--bg);color:var(--tx);font:inherit}
+button{padding:11px 16px;border:0;border-radius:10px;color:#fff;font:inherit;font-weight:700;background:var(--ac)}
+.ok{background:var(--ok)}.no{background:var(--no)}.row{display:flex;gap:8px;margin-top:10px}.row button{flex:1}
+img{max-width:100%;border-radius:10px;border:1px solid var(--bd);margin-top:8px}.mu{color:var(--mu);font-size:13px}
+.st{display:grid;grid-template-columns:1fr 1fr;gap:8px}.st div{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:10px}.st b{font-size:18px;display:block}
+pre{white-space:pre-wrap;word-break:break-all;margin:6px 0;font:inherit}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+let tok = sessionStorage.getItem("at") || "";
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => "&#" + c.charCodeAt() + ";");
+async function api(p, b) {
+  const r = await fetch("/api/" + p, { method: b ? "POST" : "GET", headers: { "Content-Type": "application/json", Authorization: tok }, body: b ? JSON.stringify(b) : undefined });
+  const j = await r.json().catch(() => ({})); if (!r.ok) throw j; return j;
+}
+function login(msg) {
+  $("#app").innerHTML = `<div class="card"><h2>Admin</h2><input id="pw" type="password" placeholder="Admin password"><div class="row"><button id="go">Log in</button></div><p class="mu">${msg || ""}</p></div>`;
+  $("#go").onclick = async () => {
+    try { const r = await api("admin/login", { password: $("#pw").value }); tok = r.token; sessionStorage.setItem("at", tok); load(); }
+    catch (e) { login("Wrong password"); }
+  };
+}
+const ago = t => { const m = Math.round((Date.now() - t) / 60000); return m < 60 ? m + " min ago" : Math.round(m / 60) + " h ago"; };
+const NAMES = { vid: "Watch video", grp: "Join group", sub: "YouTube subscribe" };
+const FN = { nm: "Full name", ph: "Phone", ac: "Account", addr: "USDT address", net: "Network", pid: "Binance Pay ID" };
+async function load() {
+  let d; try { d = await api("admin/data"); } catch (e) { return login(); }
+  if (document.activeElement && document.activeElement.tagName === "INPUT") return;
+  const s = d.stats;
+  $("#app").innerHTML = `<h2>EarnTask Admin</h2><div class="st"><div><span class="mu">Users</span><b>${s.users}</b></div><div><span class="mu">Owed to users</span><b>${s.owed} ETB</b></div><div><span class="mu">Pending tasks</span><b>${s.pTasks}</b></div><div><span class="mu">Pending withdrawals</span><b>${s.pWd}</b></div><div><span class="mu">Paid out</span><b>${Math.round(s.paid)} ETB</b></div></div>
+  <h2>Task screenshots (${d.tasks.length})</h2>${d.tasks.map(x => `<div class="card"><b>${esc(NAMES[x.task] || x.task)}</b> · +${x.r} ETB<div class="mu">${esc(x.user)} · ${ago(x.t)}</div><a href="/uploads/${x.id}.jpg?t=${tok}" target="_blank"><img src="/uploads/${x.id}.jpg?t=${tok}" alt=""></a><div class="row"><button class="ok" data-t="${x.id}" data-ok="1">Approve</button><button class="no" data-t="${x.id}">Reject</button></div></div>`).join("") || '<p class="mu">Nothing pending</p>'}
+  <h2>Withdrawals (${d.wds.length})</h2>${d.wds.map(w => `<div class="card"><b>${esc(w.m)}</b> · ${w.a} ${w.c} <span class="mu">(${w.etb} ETB)</span><div class="mu">${esc(w.user)} · ${ago(w.t)}</div><pre>${Object.entries(w.f).map(([k, v]) => esc(FN[k] || k) + ": " + esc(v)).join("\n")}</pre><div class="row"><button class="ok" data-w="${w.id}" data-ok="1">Paid</button><button class="no" data-w="${w.id}">Reject (refund)</button></div></div>`).join("") || '<p class="mu">Nothing pending</p>'}
+  <h2>Top balances</h2><div class="card">${d.users.map(u => `<div class="mu">${esc(u.label)} · ${u.bal} ETB · invited ${u.refs}</div>`).join("") || '<span class="mu">No users yet</span>'}</div>`;
+  document.querySelectorAll("button[data-t],button[data-w]").forEach(b => b.onclick = async () => {
+    if (!b.dataset.ok && !confirm("Reject?")) return;
+    b.disabled = true;
+    try { await api(b.dataset.t ? "admin/task" : "admin/wd", { id: +(b.dataset.t || b.dataset.w), ok: !!b.dataset.ok }); } catch (e) {}
+    load();
+  });
+}
+tok ? load() : login();
+setInterval(() => tok && load(), 20000);
+</script>
+</body>
+</html>
